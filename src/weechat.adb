@@ -457,6 +457,66 @@ package body WeeChat is
 
    -----------------------------------------------------------------------------
 
+   function Reset (Object : Config_Option) return Option_Set is
+     (Plugin.Config_Option_Reset (Object.Pointer, 1));
+
+   function Unset (Object : Config_Option) return Option_Unset is
+     (Plugin.Config_Option_Unset (Object.Pointer));
+
+   function Set (Object : Config_Option; Value : String) return Option_Set is
+     (Plugin.Config_Option_Set (Object.Pointer, Value & L1.NUL, 1));
+
+   function Set_Null (Object : Config_Option) return Option_Set is
+     (Plugin.Config_Option_Set_Null (Object.Pointer, 1));
+
+   function Is_Null (Object : Config_Option) return Boolean is
+     (Plugin.Config_Option_Is_Null (Object.Pointer) = 1);
+
+   function Is_Default_Null (Object : Config_Option) return Boolean is
+     (Plugin.Config_Option_Default_Is_Null (Object.Pointer) = 1);
+
+   procedure Rename (Object : Config_Option; Name : String) is
+   begin
+      Plugin.Config_Option_Rename (Object.Pointer, Name & L1.NUL);
+   end Rename;
+
+   function Kind (Object : Config_Option) return Option_Kind is
+      Property_Value : constant String :=
+        Value (Plugin.Config_Option_Get_String (Object.Pointer, "type" & L1.NUL));
+   begin
+      if Property_Value = "boolean" then
+         return Boolean_Type;
+      elsif Property_Value = "integer" then
+         return Integer_Type;
+      elsif Property_Value = "string" then
+         return String_Type;
+      elsif Property_Value = "color" then
+         return Color_Type;
+      else
+         raise Constraint_Error;
+      end if;
+   end Kind;
+
+   function Value (Object : Config_Option) return Boolean is
+     (Plugin.Config_Boolean (Object.Pointer) = 1);
+
+   function Value (Object : Config_Option) return Integer is
+     (Integer (Plugin.Config_Integer (Object.Pointer)));
+
+   function Value (Object : Config_Option) return String is
+     (Value (Plugin.Config_String (Object.Pointer)));
+
+   function Get_Config_Option (Name : String) return Config_Option is
+      Result : constant Config_Option_Ptr := Plugin.Config_Get (Name & L1.NUL);
+   begin
+      if Result = null then
+         raise Constraint_Error with "Option " & Name & " does not exist";
+      end if;
+      return (Pointer => Result);
+   end Get_Config_Option;
+
+   -----------------------------------------------------------------------------
+
    Plugin_Initialize, Plugin_Finalize : Plugin_Callback;
 
    Meta_Data : Plugin_Meta_Data;

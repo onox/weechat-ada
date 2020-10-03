@@ -25,7 +25,7 @@ for a language like Ada:
 | Sorted lists  |        |
 | Array lists   |        |
 | Hashtables    |        |
-| Configuration |        |
+| Configuration | Yes    |
 | Key bindings  |        |
 | Display       | Yes    |
 | Hooks         | Yes    |

@@ -138,6 +138,8 @@ package WeeChat is
    procedure Log (Message : String);
    --  Log a message to ~/.weechat/weechat.log
 
+   -----------------------------------------------------------------------------
+
    procedure Add_Command
      (Command               : String;
       Description           : String;
@@ -262,6 +264,51 @@ package WeeChat is
 
    function Get_Info (Name : String) return String;
 
+   -----------------------------------------------------------------------------
+
+   type Option_Set is (Error, Same_Value, Changed);
+
+   type Option_Unset is (Error, No_Reset, Reset, Removed);
+
+   type Option_Kind is (Boolean_Type, Integer_Type, String_Type, Color_Type);
+
+   type Config_Option is tagged private;
+
+   function Reset (Object : Config_Option) return Option_Set;
+   --  Reset the option to its default value
+
+   function Unset (Object : Config_Option) return Option_Unset;
+   --  Unset or reset the option
+
+   function Set (Object : Config_Option; Value : String) return Option_Set;
+   --  Set the option to the given value
+
+   function Set_Null (Object : Config_Option) return Option_Set;
+   --  Set the option to null (undefined)
+
+   function Is_Null (Object : Config_Option) return Boolean;
+   --  Return whether the current value is null
+
+   function Is_Default_Null (Object : Config_Option) return Boolean;
+   --  Return whether the default is null
+
+   procedure Rename (Object : Config_Option; Name : String);
+   --  Rename the option to the given name
+
+   function Kind (Object : Config_Option) return Option_Kind;
+
+   function Value (Object : Config_Option) return Boolean
+     with Pre'Class => Object.Kind = Boolean_Type;
+
+   function Value (Object : Config_Option) return Integer
+     with Pre'Class => Object.Kind = Integer_Type;
+
+   function Value (Object : Config_Option) return String
+     with Pre'Class => Object.Kind = String_Type;
+
+   function Get_Config_Option (Name : String) return Config_Option;
+   --  Return the option for the given name
+
 private
 
    use Interfaces.C;
@@ -282,11 +329,30 @@ private
 
    No_Timer : constant Timer := null;
 
+   type Config_Option_Ptr is access all Pointer;
+
+   type Config_Option is tagged record
+      Pointer : Config_Option_Ptr := raise Program_Error;
+   end record;
+
    for Callback_Result use
      (Error => -1,
       OK    => 0,
       Eat   => 1);
    for Callback_Result'Size use int'Size;
+
+   for Option_Set use
+     (Error      => 0,
+      Same_Value => 1,
+      Changed    => 2);
+   for Option_Set'Size use int'Size;
+
+   for Option_Unset use
+     (Error    => -1,
+      No_Reset => 0,
+      Reset    => 1,
+      Removed  => 2);
+   for Option_Unset'Size use int'Size;
 
    -----------------------------------------------------------------------------
 
@@ -329,15 +395,7 @@ private
 
 --   Weechat_Config_Option_Null : aliased constant String := "null" & L1.NUL;
 
---   Weechat_Config_Option_Set_Ok_Changed       : constant := 2;
---   Weechat_Config_Option_Set_Ok_Same_Value    : constant := 1;
---   Weechat_Config_Option_Set_Error            : constant := 0;
 --   Weechat_Config_Option_Set_Option_Not_Found : constant := -1;
-
---   Weechat_Config_Option_Unset_Ok_No_Reset : constant := 0;
---   Weechat_Config_Option_Unset_Ok_Reset    : constant := 1;
---   Weechat_Config_Option_Unset_Ok_Removed  : constant := 2;
---   Weechat_Config_Option_Unset_Error       : constant := -1;
 
 --   Weechat_List_Pos_Sort      : aliased constant String := "sort" & L1.NUL;
 --   Weechat_List_Pos_Beginning : aliased constant String := "beginning" & L1.NUL;
@@ -847,30 +905,35 @@ private
          Arg5 : System.Address);
       Config_String_To_Boolean : access function
         (Arg1 : Interfaces.C.Strings.chars_ptr) return int;
-      Config_Option_Reset : access function (Arg1 : System.Address; Arg2 : int) return int;
+      Config_Option_Reset : access function
+        (Option       : Config_Option_Ptr;
+         Run_Callback : int) return Option_Set;
       Config_Option_Set   : access function
-        (Arg1 : System.Address;
-         Arg2 : Interfaces.C.Strings.chars_ptr;
-         Arg3 : int) return int;
-      Config_Option_Set_Null : access function (Arg1 : System.Address; Arg2 : int) return int;
-      Config_Option_Unset    : access function (Arg1 : System.Address) return int;
+        (Option       : Config_Option_Ptr;
+         Value        : C_String;
+         Run_Callback : int) return Option_Set;
+      Config_Option_Set_Null : access function
+        (Option       : Config_Option_Ptr;
+         Run_Callback : int) return Option_Set;
+      Config_Option_Unset    : access function
+        (Option : Config_Option_Ptr) return Option_Unset;
       Config_Option_Rename   : access procedure
-        (Arg1 : System.Address;
-         Arg2 : Interfaces.C.Strings.chars_ptr);
+        (Option : Config_Option_Ptr;
+         Name   : C_String);
       Config_Option_Get_String : access function
-        (Arg1 : System.Address;
-         Arg2 : Interfaces.C.Strings.chars_ptr) return Interfaces.C.Strings.chars_ptr;
+        (Option   : Config_Option_Ptr;
+         Property : C_String) return Interfaces.C.Strings.chars_ptr;
       Config_Option_Get_Pointer : access function
         (Arg1 : System.Address;
          Arg2 : Interfaces.C.Strings.chars_ptr) return System.Address;
-      Config_Option_Is_Null         : access function (Arg1 : System.Address) return int;
-      Config_Option_Default_Is_Null : access function (Arg1 : System.Address) return int;
-      Config_Boolean                : access function (Arg1 : System.Address) return int;
+      Config_Option_Is_Null         : access function (Option : Config_Option_Ptr) return int;
+      Config_Option_Default_Is_Null : access function (Option : Config_Option_Ptr) return int;
+      Config_Boolean                : access function (Option : Config_Option_Ptr) return int;
       Config_Boolean_Default        : access function (Arg1 : System.Address) return int;
-      Config_Integer                : access function (Arg1 : System.Address) return int;
+      Config_Integer                : access function (Option : Config_Option_Ptr) return int;
       Config_Integer_Default        : access function (Arg1 : System.Address) return int;
       Config_String                 : access function
-        (Arg1 : System.Address) return Interfaces.C.Strings.chars_ptr;
+        (Option : Config_Option_Ptr) return Interfaces.C.Strings.chars_ptr;
       Config_String_Default : access function
         (Arg1 : System.Address) return Interfaces.C.Strings.chars_ptr;
       Config_Color : access function (Arg1 : System.Address) return Interfaces.C.Strings.chars_ptr;
@@ -891,7 +954,7 @@ private
       Config_Section_Free_Options : access procedure (Arg1 : System.Address);
       Config_Section_Free         : access procedure (Arg1 : System.Address);
       Config_Free                 : access procedure (Arg1 : System.Address);
-      Config_Get : access function (Arg1 : Interfaces.C.Strings.chars_ptr) return System.Address;
+      Config_Get : access function (Option_Name : C_String) return Config_Option_Ptr;
       Config_Get_Plugin           : access function
         (Arg1 : access T_Weechat_Plugin;
          Arg2 : Interfaces.C.Strings.chars_ptr) return Interfaces.C.Strings.chars_ptr;
