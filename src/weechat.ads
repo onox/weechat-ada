@@ -63,6 +63,8 @@ package WeeChat is
 
    Any_Buffer : constant Buffer_Ptr;
 
+   type Completion_Ptr is private;
+
    type Timer is private;
 
    No_Timer : constant Timer;
@@ -74,6 +76,8 @@ package WeeChat is
    type Prefix_Kind is (Error, Network, Action, Join, Quit);
 
    type Data_Kind is (String_Type, Int_Type, Pointer_Type);
+
+   type Completion_Position is (Any_Position, Beginning_Of_List, End_Of_List);
 
    -----------------------------------------------------------------------------
 
@@ -92,6 +96,12 @@ package WeeChat is
      (Data    : Void_Ptr;
       Buffer  : Buffer_Ptr;
       Command : String) return Callback_Result;
+
+   type On_Completion_Callback is not null access function
+     (Data       : Void_Ptr;
+      Item       : String;
+      Buffer     : Buffer_Ptr;
+      Completion : Completion_Ptr) return Callback_Result;
 
    type On_Print_Callback is not null access function
      (Data      : Void_Ptr;
@@ -153,10 +163,28 @@ package WeeChat is
    --  The callback can be given a priority by prefixing the name
    --  with `priority|`.
 
---   procedure Hook_Completion
-   --  Allows priority
+   procedure On_Completion
+     (Item        : String;
+      Description : String;
+      Callback    : On_Completion_Callback;
+      Data        : Void_Ptr := Null_Void);
+   --  Register a callback for a completion
+   --
+   --  The item should be added to weechat.completion.default_template,
+   --  otherwise nothing will happen.
+   --
+   --  In the callback, the procedure Add_Completion_Word must be called
+   --  for each word that must be added to the completion.
+   --
+   --  The callback can be given a priority by prefixing the name
+   --  with `priority|`.
 
---   procedure Completion_List_Add
+   procedure Add_Completion_Word
+     (Completion : Completion_Ptr;
+      Word       : String;
+      Is_Nick    : Boolean             := False;
+      Where      : Completion_Position := Any_Position);
+   --  Add a word to a completion
 
    procedure On_Modifier
      (Modifier : String;
@@ -247,6 +275,8 @@ private
    type Buffer_Ptr is access all Pointer;
 
    Any_Buffer : constant Buffer_Ptr := null;
+
+   type Completion_Ptr is access all Pointer;
 
    type Timer is new Hook_Ptr;
 
@@ -1062,24 +1092,24 @@ private
          Callback_Data    : System.Address) return Hook_Ptr;
       Hook_Completion : access function
         (Plugin      : access T_Weechat_Plugin;
-         Item        : Interfaces.C.Strings.chars_ptr;
-         Description : Interfaces.C.Strings.chars_ptr;
+         Item        : C_String;
+         Description : C_String;
          Callback    : access function
-           (Pointer    : System.Address;
-            Data       : System.Address;
+           (Callback   : On_Completion_Callback;
+            Data       : Void_Ptr;
             Item       : Interfaces.C.Strings.chars_ptr;
-            Buffer     : System.Address;
-            Completion : System.Address) return int;
-         Callback_Pointer : System.Address;
-         Callback_Data    : System.Address) return Hook_Ptr;
+            Buffer     : Buffer_Ptr;
+            Completion : Completion_Ptr) return Callback_Result;
+         Callback_Pointer : On_Completion_Callback;
+         Callback_Data    : Void_Ptr) return Hook_Ptr;
       Hook_Completion_Get_String : access function
         (Completion : System.Address;
          Property   : Interfaces.C.Strings.chars_ptr) return Interfaces.C.Strings.chars_ptr;
       Hook_Completion_List_Add : access procedure
-        (Completion      : System.Address;
-         Word            : Interfaces.C.Strings.chars_ptr;
+        (Completion      : Completion_Ptr;
+         Word            : C_String;
          Nick_Completion : int;
-         Where           : Interfaces.C.Strings.chars_ptr);
+         Where           : C_String);
       Hook_Modifier : access function
         (Plugin   : access T_Weechat_Plugin;
          Modifier : C_String;

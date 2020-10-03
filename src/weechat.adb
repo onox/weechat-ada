@@ -153,6 +153,20 @@ package body WeeChat is
          return Error;
    end Command_Run_Callback;
 
+   function Completion_Callback
+     (Callback   : On_Completion_Callback;
+      Data       : Void_Ptr;
+      Item       : Interfaces.C.Strings.chars_ptr;
+      Buffer     : Buffer_Ptr;
+      Completion : Completion_Ptr) return Callback_Result is
+   begin
+      return Callback (Data, Value (Item), Buffer, Completion);
+   exception
+      when E : others =>
+         Print_Error (E);
+         return Error;
+   end Completion_Callback;
+
    function Modifier_Callback
      (Callback      : On_Modifier_Callback;
       Data          : Void_Ptr;
@@ -290,6 +304,38 @@ package body WeeChat is
          Data);
       pragma Assert (Result /= null);
    end On_Command_Run;
+
+   procedure On_Completion
+     (Item        : String;
+      Description : String;
+      Callback    : On_Completion_Callback;
+      Data        : Void_Ptr := Null_Void)
+   is
+      Result : Hook_Ptr;
+   begin
+      Result := Plugin.Hook_Completion
+        (Plugin,
+         Item & L1.NUL,
+         Description & L1.NUL,
+         Completion_Callback'Access,
+         Callback,
+         Data);
+      pragma Assert (Result /= null);
+   end On_Completion;
+
+   procedure Add_Completion_Word
+     (Completion : Completion_Ptr;
+      Word       : String;
+      Is_Nick    : Boolean             := False;
+      Where      : Completion_Position := Any_Position) is
+   begin
+      Plugin.Hook_Completion_List_Add
+        (Completion, Word & L1.NUL, (if Is_Nick then 1 else 0),
+         (case Where is
+            when Any_Position      => "sort",
+            when Beginning_Of_List => "beginning",
+            when End_Of_List       => "end") & L1.NUL);
+   end Add_Completion_Word;
 
    function Run_Command
      (Buffer  : Buffer_Ptr;
