@@ -53,6 +53,8 @@ package WeeChat is
       Separator : String  := " ";
       Maximum   : Natural := 0) return String_List;
 
+   function Join (List : String_List; Separator : String) return String;
+
    -----------------------------------------------------------------------------
 
    type Void_Ptr is new System.Address;

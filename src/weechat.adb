@@ -57,6 +57,17 @@ package body WeeChat is
       end return;
    end Split;
 
+   function Join (List : String_List; Separator : String) return String is
+      Result : SU.Unbounded_String;
+   begin
+      for Index in List'First .. List'Last - 1 loop
+         SU.Append (Result, List (Index));
+         SU.Append (Result, Separator);
+      end loop;
+      SU.Append (Result, List (List'Last));
+      return +Result;
+   end Join;
+
    procedure Send_Message (Server, Recipient, Message : String) is
       Signal_Message : chars_ptr := New_String
         (Server & ";" & Recipient & ";priority_high,user_message;;" & Message);
