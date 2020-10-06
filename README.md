@@ -43,30 +43,79 @@ for a language like Ada:
 ## Usage
 
 ```ada
-package Plugin
+package Plugin_My_Plugin_Name
    pragma Elaborate_Body;
-end Plugin;
+end Plugin_My_Plugin_Name;
 ```
 
+Because your plug-in is build as a stand-alone library, the Ada package
+of your plug-in should have a unique name in order to avoid unexpected
+behavior due to symbol name collisions when you load multiple Ada plug-ins.
+
+You must export several C strings and two functions, called when the plug-in
+is loaded and unloaded:
+
 ```ada
+with System;
+
+with Interfaces.C;
+
 with WeeChat;
 
-package body Plugin is
+package body Plugin_My_Plugin_Name is
+
    use WeeChat;
 
-   procedure Plugin_Initialize is
+   procedure Plugin_Initialize (Plugin : Plugin_Ptr) is
    begin
-      Print ("Hello world from Ada");
+      Print (Plugin, "Hello world from Ada");
 
       --  Call the various On_* subprograms here to set-up hooks
    end Plugin_Initialize;
 
-   procedure Plugin_Finalize is null;
-begin
-   WeeChat.Register
-     ("ada", "Ada Lovelace", "Plug-in written in Ada 2012", "1.0", "Apache-2.0",
-      Plugin_Initialize'Access, Plugin_Finalize'Access);
-end Plugin;
+   procedure Plugin_Finalize (Plugin : Plugin_Ptr) is null;
+
+   Plugin_Name : constant C_String := "mypluginname" & L1.NUL
+     with Export, Convention => C, External_Name => "weechat_plugin_name";
+
+   Plugin_Author : constant C_String := "Ada Lovelace" & L1.NUL
+     with Export, Convention => C, External_Name => "weechat_plugin_author";
+
+   Plugin_Description : constant C_String := "My WeeChat plug-in written in Ada 2012" & L1.NUL
+     with Export, Convention => C, External_Name => "weechat_plugin_description";
+
+   Plugin_Version : constant C_String := "1.0" & L1.NUL
+     with Export, Convention  => C, External_Name => "weechat_plugin_version";
+
+   Plugin_License : constant C_String := "Apache-2.0" & L1.NUL
+     with Export, Convention => C, External_Name => "weechat_plugin_license";
+
+   Plugin_API_Version : constant C_String := WeeChat.Plugin_API_Version
+     with Export, Convention => C, External_Name => "weechat_plugin_api_version";
+
+   function Plugin_Init
+     (Object : Plugin_Ptr;
+      Argc   : Interfaces.C.int;
+      Argv   : System.Address) return Callback_Result
+   with Export, Convention => C, External_Name => "weechat_plugin_init";
+
+   function Plugin_End (Object : Plugin_Ptr) return Callback_Result
+     with Export, Convention => C, External_Name => "weechat_plugin_end";
+
+   function Plugin_Init
+     (Object : Plugin_Ptr;
+      Argc   : Interfaces.C.int;
+      Argv   : System.Address) return Callback_Result is
+   begin
+      return Plugin_Init (Object, Plugin_Initialize'Access);
+   end Plugin_Init;
+
+   function Plugin_End (Object : Plugin_Ptr) return Callback_Result is
+   begin
+      return Plugin_End (Object, Plugin_Finalize'Access);
+   end Plugin_End;
+
+end Plugin_My_Plugin_Name;
 ```
 
 You must be careful not to spawn any tasks that cannot be terminated. For
@@ -83,8 +132,8 @@ loop
 end loop;
 ```
 
-You should add this code to an exception handler in `Plugin_Initialize` and
-to `Plugin_Finalize`.
+If you create any tasks, you should add this code to an exception handler
+in `Plugin_Initialize` and `Plugin_Finalize`.
 
 ## Dependencies
 
@@ -131,9 +180,27 @@ with "weechat";
 You must make sure to build the plug-in as a Stand-Alone Library:
 
 ```ada
-for Library_Version use "my-weechat-plugin.so";
-for Library_Interface use ("plugin");
+library project WeeChat_My_Plugin is
+
+   for Library_Name use "weechat_my_plugin";
+   for Library_Version use "ada-my-plugin.so";
+   for Library_Kind use "relocatable";
+
+   for Library_Interface use ("plugin_my_plugin_name");
+   for Library_Standalone use "encapsulated";
+
+end WeeChat_My_Plugin;
 ```
+
+You can copy ada-my-plugin.so to ~/.weechat/plugins/.
+
+`Library_Standalone` should either be "standard" or "encapsulated".
+"encapsulated" will put the GNAT RTS inside your library and will force any
+third-party Ada libraries that you import to be compiled as "static-pic" instead
+of "dynamic" or "relocatable". "standard" does not have these restrictions,
+but reloading or unloading your plug-in may segfault WeeChat if there is
+another plug-in that uses "standard" as well. Therefore the safest option
+is to choose "encapsulated" if you can live with the restrictions.
 
 If you need to link to some specific library, you can use `Library_Options`.
 For example:
@@ -141,6 +208,9 @@ For example:
 ```ada
 for Library_Options use ("-lcanberra");
 ```
+
+For a complete example see [weechat-canberra][url-weechat-canberra] or
+[weechat-emoji][url-weechat-emoji].
 
 ## Contributing
 
@@ -158,3 +228,5 @@ refers to this license:
   [url-apache]: https://opensource.org/licenses/Apache-2.0
   [url-contributing]: /CONTRIBUTING.md
   [url-weechat]: https://weechat.org/
+  [url-weechat-canberra]: https://github.com/onox/weechat-canberra
+  [url-weechat-emoji]: https://github.com/onox/weechat-emoji

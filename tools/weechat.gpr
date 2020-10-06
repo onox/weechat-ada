@@ -13,7 +13,7 @@ library project Weechat is
    for Library_Version use "libweechat-ada.so." & Config.Version;
    for Library_Dir  use "../build/lib";
    for Library_ALI_Dir use "../build/lib/weechat-ada";
-   for Library_Kind use "relocatable";
+   for Library_Kind use "static-pic";
 
    package Ide renames Config.Ide;
    package Builder renames Config.Builder;

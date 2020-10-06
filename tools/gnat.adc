@@ -3,6 +3,9 @@ pragma Initialize_Scalars;
 pragma Assertion_Policy (Pre => Check, Pre'Class => Check);
 pragma Overflow_Mode (General => Strict, Assertions => Eliminated);
 
+pragma Restrictions (No_Abort_Statements);
+pragma Restrictions (Max_Asynchronous_Select_Nesting => 0);
+
 pragma Restrictions (No_Dependence => Ada.Real_Time.Timing_Events);
 --  Timing_Events creates an internal task that cannnot be terminated.
 --  This prevents proper reloading of plug-ins

@@ -24,8 +24,6 @@ package body WeeChat is
 
    use Interfaces.C.Strings;
 
-   Plugin : Plugin_Ptr;
-
    package SM renames Ada.Strings.Maps;
 
    function Trim (Value : String) return String is
@@ -68,13 +66,16 @@ package body WeeChat is
       return +Result;
    end Join;
 
-   procedure Send_Message (Server, Recipient, Message : String) is
+   procedure Send_Message
+     (Plugin : Plugin_Ptr;
+      Server, Recipient, Message : String)
+   is
       Signal_Message : chars_ptr := New_String
         (Server & ";" & Recipient & ";priority_high,user_message;;" & Message);
 
       function Convert is new Ada.Unchecked_Conversion (chars_ptr, Void_Ptr);
    begin
-      Send_Signal ("irc_input_send", String_Type, Convert (Signal_Message));
+      Send_Signal (Plugin, "irc_input_send", String_Type, Convert (Signal_Message));
       Free (Signal_Message);
    exception
       when others =>
@@ -88,7 +89,10 @@ package body WeeChat is
       return Sender (Sender'First + 1 .. Sender'Last);
    end Get_Nick;
 
-   procedure Print (Prefix : Prefix_Kind; Message : String) is
+   function Name (Plugin : Plugin_Ptr) return String is
+     (Value (Plugin.Plugin_Get_Name (Plugin)));
+
+   procedure Print (Plugin : Plugin_Ptr; Prefix : Prefix_Kind; Message : String) is
       package CH renames Ada.Characters.Handling;
 
       Prefix_String  : constant chars_ptr := Plugin.Prefix (CH.To_Lower (Prefix'Image) & L1.NUL);
@@ -98,30 +102,30 @@ package body WeeChat is
         (System.Null_Address, 0, Null_Ptr, Message_String);
    end Print;
 
-   procedure Print (Prefix : String; Message : String) is
+   procedure Print (Plugin : Plugin_Ptr; Prefix : String; Message : String) is
    begin
       Plugin.Printf_Date_Tags
         (System.Null_Address, 0, Null_Ptr, Prefix & L1.HT & Message & L1.NUL);
    end Print;
 
-   procedure Print (Message : String) is
+   procedure Print (Plugin : Plugin_Ptr; Message : String) is
    begin
-      Print (" ", Message);
+      Print (Plugin, " ", Message);
    end Print;
 
-   procedure Log (Message : String) is
+   procedure Log (Plugin : Plugin_Ptr; Message : String) is
    begin
       Plugin.Log_Printf (Message & L1.NUL);
    end Log;
 
-   procedure Print_Error (Value : Ada.Exceptions.Exception_Occurrence) is
+   procedure Print_Error (Plugin : Plugin_Ptr; Value : Ada.Exceptions.Exception_Occurrence) is
    begin
-      Print (Error, Ada.Exceptions.Exception_Information (Value));
+      Print (Plugin, Error, Ada.Exceptions.Exception_Information (Value));
    end Print_Error;
 
    function Command_Callback
      (Callback : On_Command_Callback;
-      Data     : Void_Ptr;
+      Data     : Data_Ptr;
       Buffer   : Buffer_Ptr;
       Argc     : int;
       Argv     : access chars_ptr;
@@ -144,57 +148,58 @@ package body WeeChat is
          Arguments (Index) := SU.To_Unbounded_String (Get_Argument (Index));
       end loop;
 
-      return Callback (Data, Buffer, Arguments);
+      return Callback (Data.Plugin, Buffer, Arguments);
    exception
       when E : others =>
-         Print_Error (E);
+         Print_Error (Data.Plugin, E);
          return Error;
    end Command_Callback;
 
    function Command_Run_Callback
      (Callback : On_Command_Run_Callback;
-      Data     : Void_Ptr;
+      Data     : Data_Ptr;
       Buffer   : Buffer_Ptr;
       Command  : chars_ptr) return Callback_Result is
    begin
-      return Callback (Data, Buffer, Value (Command));
+      return Callback (Data.Plugin, Buffer, Value (Command));
    exception
       when E : others =>
-         Print_Error (E);
+         Print_Error (Data.Plugin, E);
          return Error;
    end Command_Run_Callback;
 
    function Completion_Callback
      (Callback   : On_Completion_Callback;
-      Data       : Void_Ptr;
+      Data       : Data_Ptr;
       Item       : Interfaces.C.Strings.chars_ptr;
       Buffer     : Buffer_Ptr;
       Completion : Completion_Ptr) return Callback_Result is
    begin
-      return Callback (Data, Value (Item), Buffer, Completion);
+      return Callback (Data.Plugin, Value (Item), Buffer, Completion);
    exception
       when E : others =>
-         Print_Error (E);
+         Print_Error (Data.Plugin, E);
          return Error;
    end Completion_Callback;
 
    function Modifier_Callback
      (Callback      : On_Modifier_Callback;
-      Data          : Void_Ptr;
+      Data          : Data_Ptr;
       Modifier      : chars_ptr;
       Modifier_Data : chars_ptr;
       Text          : chars_ptr) return chars_ptr is
    begin
-      return New_String (Callback (Data, Value (Modifier), Value (Modifier_Data), Value (Text)));
+      return New_String
+        (Callback (Data.Plugin, Value (Modifier), Value (Modifier_Data), Value (Text)));
    exception
       when E : others =>
-         Print_Error (E);
+         Print_Error (Data.Plugin, E);
          return Text;
    end Modifier_Callback;
 
    function Print_Callback
      (Callback   : On_Print_Callback;
-      Data       : Void_Ptr;
+      Data       : Data_Ptr;
       Buffer     : Buffer_Ptr;
       Date       : Time_T;
       Tagc       : int;
@@ -226,17 +231,17 @@ package body WeeChat is
          Tags (Index) := SU.To_Unbounded_String (Get_Tag (Index));
       end loop;
 
-      return Callback (Data, Buffer, Time_Epoch + Time_Offset + Duration (Date),
+      return Callback (Data.Plugin, Buffer, Time_Epoch + Time_Offset + Duration (Date),
         Tags, Displayed = 1, Highlight = 1, Value (Prefix), Value (Message));
    exception
       when E : others =>
-         Print_Error (E);
+         Print_Error (Data.Plugin, E);
          return Error;
    end Print_Callback;
 
    function Signal_Callback
      (Callback    : On_Signal_Callback;
-      Data        : Void_Ptr;
+      Data        : Data_Ptr;
       Signal      : chars_ptr;
       Type_Data   : chars_ptr;
       Signal_Data : Void_Ptr) return Callback_Result
@@ -255,35 +260,35 @@ package body WeeChat is
          raise Constraint_Error with "Invalid signal type";
       end if;
 
-      return Callback (Data, Value (Signal), Kind, Signal_Data);
+      return Callback (Data.Plugin, Value (Signal), Kind, Signal_Data);
    exception
       when E : others =>
-         Print_Error (E);
+         Print_Error (Data.Plugin, E);
          return Error;
    end Signal_Callback;
 
    function Timer_Callback
      (Callback        : On_Timer_Callback;
-      Data            : Void_Ptr;
+      Data            : Data_Ptr;
       Remaining_Calls : int) return Callback_Result is
    begin
-      return Callback (Data, Integer (Remaining_Calls));
+      return Callback (Data.Plugin, Integer (Remaining_Calls));
    exception
       when E : others =>
-         Print_Error (E);
+         Print_Error (Data.Plugin, E);
          return Error;
    end Timer_Callback;
 
    -----------------------------------------------------------------------------
 
    procedure Add_Command
-     (Command               : String;
+     (Plugin                : Plugin_Ptr;
+      Command               : String;
       Description           : String;
       Arguments             : String;
       Arguments_Description : String;
       Completion            : String;
-      Callback              : On_Command_Callback;
-      Data                  : Void_Ptr := Null_Void)
+      Callback              : On_Command_Callback)
    is
       Result : Hook_Ptr;
    begin
@@ -296,14 +301,14 @@ package body WeeChat is
          Completion & L1.NUL,
          Command_Callback'Access,
          Callback,
-         Data);
+         new Data'(Plugin => Plugin));
       pragma Assert (Result /= null);
    end Add_Command;
 
    procedure On_Command_Run
-     (Command  : String;
-      Callback : On_Command_Run_Callback;
-      Data     : Void_Ptr := Null_Void)
+     (Plugin   : Plugin_Ptr;
+      Command  : String;
+      Callback : On_Command_Run_Callback)
    is
       Result : Hook_Ptr;
    begin
@@ -312,15 +317,15 @@ package body WeeChat is
          Command & L1.NUL,
          Command_Run_Callback'Access,
          Callback,
-         Data);
+         new Data'(Plugin => Plugin));
       pragma Assert (Result /= null);
    end On_Command_Run;
 
    procedure On_Completion
-     (Item        : String;
+     (Plugin      : Plugin_Ptr;
+      Item        : String;
       Description : String;
-      Callback    : On_Completion_Callback;
-      Data        : Void_Ptr := Null_Void)
+      Callback    : On_Completion_Callback)
    is
       Result : Hook_Ptr;
    begin
@@ -330,12 +335,13 @@ package body WeeChat is
          Description & L1.NUL,
          Completion_Callback'Access,
          Callback,
-         Data);
+         new Data'(Plugin => Plugin));
       pragma Assert (Result /= null);
    end On_Completion;
 
    procedure Add_Completion_Word
-     (Completion : Completion_Ptr;
+     (Plugin     : Plugin_Ptr;
+      Completion : Completion_Ptr;
       Word       : String;
       Is_Nick    : Boolean             := False;
       Where      : Completion_Position := Any_Position) is
@@ -349,7 +355,8 @@ package body WeeChat is
    end Add_Completion_Word;
 
    function Run_Command
-     (Buffer  : Buffer_Ptr;
+     (Plugin  : Plugin_Ptr;
+      Buffer  : Buffer_Ptr;
       Message : String) return Boolean
    is
       Result : Callback_Result;
@@ -360,57 +367,67 @@ package body WeeChat is
    end Run_Command;
 
    procedure Run_Command
-     (Buffer  : Buffer_Ptr;
+     (Plugin  : Plugin_Ptr;
+      Buffer  : Buffer_Ptr;
       Message : String) is
    begin
-      if not Run_Command (Buffer, Message) then
+      if not Run_Command (Plugin, Buffer, Message) then
          raise Program_Error;
       end if;
    end Run_Command;
 
    procedure On_Modifier
-     (Modifier : String;
-      Callback : On_Modifier_Callback;
-      Data     : Void_Ptr := Null_Void)
+     (Plugin   : Plugin_Ptr;
+      Modifier : String;
+      Callback : On_Modifier_Callback)
    is
       Result : Hook_Ptr;
    begin
       Result := Plugin.Hook_Modifier
-        (Plugin, Modifier & L1.NUL, Modifier_Callback'Access, Callback, Data);
+        (Plugin,
+         Modifier & L1.NUL,
+         Modifier_Callback'Access,
+         Callback,
+         new Data'(Plugin => Plugin));
       pragma Assert (Result /= null);
    end On_Modifier;
 
    procedure On_Print
-     (Buffer       : Buffer_Ptr;
+     (Plugin       : Plugin_Ptr;
+      Buffer       : Buffer_Ptr;
       Tags         : String;
       Message      : String;
       Strip_Colors : Boolean;
-      Callback     : On_Print_Callback;
-      Data         : Void_Ptr := Null_Void)
+      Callback     : On_Print_Callback)
    is
       Result : Hook_Ptr;
    begin
       Result := Plugin.Hook_Print
-        (Plugin,  Buffer, Tags & L1.NUL, Message & L1.NUL,
-         (if Strip_Colors then 1 else 0), Print_Callback'Access, Callback, Data);
+        (Plugin, Buffer, Tags & L1.NUL, Message & L1.NUL,
+         (if Strip_Colors then 1 else 0), Print_Callback'Access,
+         Callback,
+         new Data'(Plugin => Plugin));
       pragma Assert (Result /= null);
    end On_Print;
 
    procedure On_Signal
-     (Signal   : String;
-      Callback : On_Signal_Callback;
-      Data     : Void_Ptr := Null_Void)
+     (Plugin   : Plugin_Ptr;
+      Signal   : String;
+      Callback : On_Signal_Callback)
    is
       Result : Hook_Ptr;
    begin
       Result := Plugin.Hook_Signal
         (Plugin, (if Signal'Length > 0 then Signal else "*") & L1.NUL,
-         Signal_Callback'Access, Callback, Data);
+         Signal_Callback'Access,
+         Callback,
+         new Data'(Plugin => Plugin));
       pragma Assert (Result /= null);
    end On_Signal;
 
    procedure Send_Signal
-     (Signal      : String;
+     (Plugin      : Plugin_Ptr;
+      Signal      : String;
       Kind        : Data_Kind;
       Signal_Data : Void_Ptr)
    is
@@ -426,32 +443,34 @@ package body WeeChat is
    end Send_Signal;
 
    function Set_Timer
-     (Interval     : Duration;
+     (Plugin       : Plugin_Ptr;
+      Interval     : Duration;
       Align_Second : Natural;
       Max_Calls    : Natural;
-      Callback     : On_Timer_Callback;
-      Data         : Void_Ptr := Null_Void) return Timer
+      Callback     : On_Timer_Callback) return Timer
    is
       Result : Hook_Ptr;
    begin
       Result := Plugin.Hook_Timer
         (Plugin, long (Interval * 1e3), int (Align_Second), int (Max_Calls),
-         Timer_Callback'Access, Callback, Data);
+         Timer_Callback'Access,
+         Callback,
+         new Data'(Plugin => Plugin));
       pragma Assert (Result /= null);
-      return Timer (Result);
+      return (Result => Result, Plugin => Plugin);
    end Set_Timer;
 
    procedure Cancel_Timer (Object : Timer) is
    begin
-      Plugin.Unhook (Hook_Ptr (Object));
+      Object.Plugin.Unhook (Object.Result);
    end Cancel_Timer;
 
-   procedure Set_Title (Title : String) is
+   procedure Set_Title (Plugin : Plugin_Ptr; Title : String) is
    begin
       Plugin.Window_Set_Title (Title & L1.NUL);
    end Set_Title;
 
-   function Get_Info (Name, Arguments : String) return String is
+   function Get_Info (Plugin : Plugin_Ptr; Name, Arguments : String) return String is
       Args : chars_ptr := New_String (Arguments);
    begin
       return Result : constant String := Value (Plugin.Info_Get (Plugin, Name & L1.NUL, Args)) do
@@ -463,37 +482,37 @@ package body WeeChat is
          raise;
    end Get_Info;
 
-   function Get_Info (Name : String) return String is
+   function Get_Info (Plugin : Plugin_Ptr; Name : String) return String is
      (Value (Plugin.Info_Get (Plugin, Name & L1.NUL, Null_Ptr)));
 
    -----------------------------------------------------------------------------
 
    function Reset (Object : Config_Option) return Option_Set is
-     (Plugin.Config_Option_Reset (Object.Pointer, 1));
+     (Object.Plugin.Config_Option_Reset (Object.Pointer, 1));
 
    function Unset (Object : Config_Option) return Option_Unset is
-     (Plugin.Config_Option_Unset (Object.Pointer));
+     (Object.Plugin.Config_Option_Unset (Object.Pointer));
 
    function Set (Object : Config_Option; Value : String) return Option_Set is
-     (Plugin.Config_Option_Set (Object.Pointer, Value & L1.NUL, 1));
+     (Object.Plugin.Config_Option_Set (Object.Pointer, Value & L1.NUL, 1));
 
    function Set_Null (Object : Config_Option) return Option_Set is
-     (Plugin.Config_Option_Set_Null (Object.Pointer, 1));
+     (Object.Plugin.Config_Option_Set_Null (Object.Pointer, 1));
 
    function Is_Null (Object : Config_Option) return Boolean is
-     (Plugin.Config_Option_Is_Null (Object.Pointer) = 1);
+     (Object.Plugin.Config_Option_Is_Null (Object.Pointer) = 1);
 
    function Is_Default_Null (Object : Config_Option) return Boolean is
-     (Plugin.Config_Option_Default_Is_Null (Object.Pointer) = 1);
+     (Object.Plugin.Config_Option_Default_Is_Null (Object.Pointer) = 1);
 
    procedure Rename (Object : Config_Option; Name : String) is
    begin
-      Plugin.Config_Option_Rename (Object.Pointer, Name & L1.NUL);
+      Object.Plugin.Config_Option_Rename (Object.Pointer, Name & L1.NUL);
    end Rename;
 
    function Kind (Object : Config_Option) return Option_Kind is
       Property_Value : constant String :=
-        Value (Plugin.Config_Option_Get_String (Object.Pointer, "type" & L1.NUL));
+        Value (Object.Plugin.Config_Option_Get_String (Object.Pointer, "type" & L1.NUL));
    begin
       if Property_Value = "boolean" then
          return Boolean_Type;
@@ -509,75 +528,47 @@ package body WeeChat is
    end Kind;
 
    function Value (Object : Config_Option) return Boolean is
-     (Plugin.Config_Boolean (Object.Pointer) = 1);
+     (Object.Plugin.Config_Boolean (Object.Pointer) = 1);
 
    function Value (Object : Config_Option) return Integer is
-     (Integer (Plugin.Config_Integer (Object.Pointer)));
+     (Integer (Object.Plugin.Config_Integer (Object.Pointer)));
 
    function Value (Object : Config_Option) return String is
-     (Value (Plugin.Config_String (Object.Pointer)));
+     (Value (Object.Plugin.Config_String (Object.Pointer)));
 
-   function Get_Config_Option (Name : String) return Config_Option is
+   function Get_Config_Option (Plugin : Plugin_Ptr; Name : String) return Config_Option is
       Result : constant Config_Option_Ptr := Plugin.Config_Get (Name & L1.NUL);
    begin
       if Result = null then
          raise Constraint_Error with "Option " & Name & " does not exist";
       end if;
-      return (Pointer => Result);
+      return (Pointer => Result, Plugin => Plugin);
    end Get_Config_Option;
 
    -----------------------------------------------------------------------------
 
-   Plugin_Initialize, Plugin_Finalize : Plugin_Callback;
-
-   Meta_Data : Plugin_Meta_Data;
-
    function Plugin_Init
-     (Plugin : Plugin_Ptr;
-      Argc   : int;
-      Argv   : System.Address) return Callback_Result is
+     (Object        : Plugin_Ptr;
+      On_Initialize : Plugin_Callback) return Callback_Result is
    begin
-      WeeChat.Plugin := Plugin;
-
-      if Plugin_Initialize = null then
-         raise Program_Error with "Plug-in not initialized with call to procedure Register";
-      end if;
-
-      Plugin.Name        := New_String (+Meta_Data.Name);
-      Plugin.Author      := New_String (+Meta_Data.Author);
-      Plugin.Description := New_String (+Meta_Data.Description);
-      Plugin.Version     := New_String (+Meta_Data.Version);
-      Plugin.License     := New_String (+Meta_Data.License);
-
-      Plugin_Initialize.all;
-
+      On_Initialize (Object);
       return OK;
    exception
       when E : others =>
-         Print_Error (E);
-         WeeChat.Plugin := null;
+         Print_Error (Object, E);
          return Error;
    end Plugin_Init;
 
-   function Plugin_End (Plugin : Plugin_Ptr) return Callback_Result is
+   function Plugin_End
+     (Object      : Plugin_Ptr;
+      On_Finalize : Plugin_Callback) return Callback_Result is
    begin
-      Plugin_Finalize.all;
-      WeeChat.Plugin := null;
+      On_Finalize (Object);
       return OK;
    exception
       when E : others =>
-         Print_Error (E);
+         Print_Error (Object, E);
          return Error;
    end Plugin_End;
-
-   procedure Register
-     (Name, Author, Description, Version, License : String;
-      Initialize, Finalize                        : not null Plugin_Callback) is
-   begin
-      Meta_Data := (+Name, +Author, +Description, +Version, +License);
-
-      Plugin_Initialize := Initialize;
-      Plugin_Finalize   := Finalize;
-   end Register;
 
 end WeeChat;

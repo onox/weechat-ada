@@ -17,26 +17,36 @@
 with System;
 
 with Ada.Calendar;
+with Ada.Characters.Latin_1;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 
 private with Interfaces.C.Strings;
 
-private with Ada.Characters.Latin_1;
-
 package WeeChat is
    pragma Elaborate_Body;
 
-   type Plugin_Callback is access procedure;
+   type Plugin_Ptr is private;
 
-   procedure Register
-     (Name, Author, Description, Version, License : String;
-      Initialize, Finalize                        : not null Plugin_Callback);
-   --  Register the plug-in so that it can be initialized and finalized
-   --  when loaded and unloaded
-   --
-   --  This procedure must be called once in the initialization part of
-   --  the body of the package of the plug-in.
+   type Plugin_Callback is not null access procedure (Plugin : Plugin_Ptr);
+
+   type Callback_Result is (Error, OK, Eat);
+
+   function Plugin_Init
+     (Object        : Plugin_Ptr;
+      On_Initialize : Plugin_Callback) return Callback_Result;
+
+   function Plugin_End
+     (Object      : Plugin_Ptr;
+      On_Finalize : Plugin_Callback) return Callback_Result;
+
+   package L1 renames Ada.Characters.Latin_1;
+
+   subtype C_String is String
+     with Dynamic_Predicate => C_String (C_String'Last) = L1.NUL;
+
+   Plugin_API_Version : constant String := "20170530-02" & L1.NUL;
+   --  Generated for version 1.9.1, the version packaged in Ubuntu 18.04 LTS
 
    -----------------------------------------------------------------------------
 
@@ -61,6 +71,12 @@ package WeeChat is
 
    Null_Void : constant Void_Ptr;
 
+   type Data is record
+      Plugin : Plugin_Ptr;
+   end record;
+
+   type Data_Ptr is access all Data;
+
    type Buffer_Ptr is private;
 
    Any_Buffer : constant Buffer_Ptr;
@@ -73,8 +89,6 @@ package WeeChat is
 
    -----------------------------------------------------------------------------
 
-   type Callback_Result is (Error, OK, Eat);
-
    type Prefix_Kind is (Error, Network, Action, Join, Quit);
 
    type Data_Kind is (String_Type, Int_Type, Pointer_Type);
@@ -84,29 +98,29 @@ package WeeChat is
    -----------------------------------------------------------------------------
 
    type On_Modifier_Callback is not null access function
-     (Data          : Void_Ptr;
+     (Plugin        : Plugin_Ptr;
       Modifier      : String;
       Modifier_Data : String;
       Text          : String) return String;
 
    type On_Command_Callback is not null access function
-     (Data      : Void_Ptr;
+     (Plugin    : Plugin_Ptr;
       Buffer    : Buffer_Ptr;
       Arguments : String_List) return Callback_Result;
 
    type On_Command_Run_Callback is not null access function
-     (Data    : Void_Ptr;
+     (Plugin  : Plugin_Ptr;
       Buffer  : Buffer_Ptr;
       Command : String) return Callback_Result;
 
    type On_Completion_Callback is not null access function
-     (Data       : Void_Ptr;
+     (Plugin     : Plugin_Ptr;
       Item       : String;
       Buffer     : Buffer_Ptr;
       Completion : Completion_Ptr) return Callback_Result;
 
    type On_Print_Callback is not null access function
-     (Data      : Void_Ptr;
+     (Plugin    : Plugin_Ptr;
       Buffer    : Buffer_Ptr;
       Date      : Ada.Calendar.Time;
       Tags      : String_List;
@@ -116,40 +130,42 @@ package WeeChat is
       Message   : String) return Callback_Result;
 
    type On_Signal_Callback is not null access function
-     (Data        : Void_Ptr;
+     (Plugin      : Plugin_Ptr;
       Signal      : String;
       Kind        : Data_Kind;
       Signal_Data : Void_Ptr) return Callback_Result;
 
    type On_Timer_Callback is not null access function
-     (Data            : Void_Ptr;
+     (Plugin          : Plugin_Ptr;
       Remaining_Calls : Integer) return Callback_Result;
 
    -----------------------------------------------------------------------------
 
-   procedure Print (Prefix : Prefix_Kind; Message : String);
+   function Name (Plugin : Plugin_Ptr) return String;
+
+   procedure Print (Plugin : Plugin_Ptr; Prefix : Prefix_Kind; Message : String);
    --  Print a message with the given prefix to the screen
 
-   procedure Print (Prefix : String; Message : String)
+   procedure Print (Plugin : Plugin_Ptr; Prefix : String; Message : String)
      with Pre => Prefix'Length > 0;
    --  Print a message with an arbitrary prefix to the screen
 
-   procedure Print (Message : String);
+   procedure Print (Plugin : Plugin_Ptr; Message : String);
    --  Print a message without a prefix to the screen
 
-   procedure Log (Message : String);
+   procedure Log (Plugin : Plugin_Ptr; Message : String);
    --  Log a message to ~/.weechat/weechat.log
 
    -----------------------------------------------------------------------------
 
    procedure Add_Command
-     (Command               : String;
+     (Plugin                : Plugin_Ptr;
+      Command               : String;
       Description           : String;
       Arguments             : String;
       Arguments_Description : String;
       Completion            : String;
-      Callback              : On_Command_Callback;
-      Data                  : Void_Ptr := Null_Void);
+      Callback              : On_Command_Callback);
    --  Add a new command and register a callback called when the command
    --  is run
    --
@@ -157,9 +173,9 @@ package WeeChat is
    --  with `priority|`.
 
    procedure On_Command_Run
-     (Command  : String;
-      Callback : On_Command_Run_Callback;
-      Data     : Void_Ptr := Null_Void);
+     (Plugin   : Plugin_Ptr;
+      Command  : String;
+      Callback : On_Command_Run_Callback);
    --  Register a callback called when the given command is run
    --
    --  Wildcard `*` can be used in the command.
@@ -168,10 +184,10 @@ package WeeChat is
    --  with `priority|`.
 
    procedure On_Completion
-     (Item        : String;
+     (Plugin      : Plugin_Ptr;
+      Item        : String;
       Description : String;
-      Callback    : On_Completion_Callback;
-      Data        : Void_Ptr := Null_Void);
+      Callback    : On_Completion_Callback);
    --  Register a callback for a completion
    --
    --  The item should be added to weechat.completion.default_template,
@@ -184,28 +200,29 @@ package WeeChat is
    --  with `priority|`.
 
    procedure Add_Completion_Word
-     (Completion : Completion_Ptr;
+     (Plugin     : Plugin_Ptr;
+      Completion : Completion_Ptr;
       Word       : String;
       Is_Nick    : Boolean             := False;
       Where      : Completion_Position := Any_Position);
    --  Add a word to a completion
 
    procedure On_Modifier
-     (Modifier : String;
-      Callback : On_Modifier_Callback;
-      Data     : Void_Ptr := Null_Void);
+     (Plugin   : Plugin_Ptr;
+      Modifier : String;
+      Callback : On_Modifier_Callback);
    --  Register a callback called to modify certain messages
    --
    --  The callback can be given a priority by prefixing the name
    --  with `priority|`.
 
    procedure On_Print
-     (Buffer       : Buffer_Ptr;
+     (Plugin       : Plugin_Ptr;
+      Buffer       : Buffer_Ptr;
       Tags         : String;
       Message      : String;
       Strip_Colors : Boolean;
-      Callback     : On_Print_Callback;
-      Data         : Void_Ptr := Null_Void);
+      Callback     : On_Print_Callback);
    --  Register a callback for when message is printed to the screen
    --
    --  Wildcard `*` is allowed in tags. Tags must be separated by a
@@ -213,9 +230,9 @@ package WeeChat is
    --  operation).
 
    procedure On_Signal
-     (Signal   : String;
-      Callback : On_Signal_Callback;
-      Data     : Void_Ptr := Null_Void);
+     (Plugin   : Plugin_Ptr;
+      Signal   : String;
+      Callback : On_Signal_Callback);
    --  Register a callback for when a signal is sent
    --
    --  Wildcard `*` is allowed in name.
@@ -224,18 +241,22 @@ package WeeChat is
    --  with `priority|`.
 
    function Run_Command
-     (Buffer  : Buffer_Ptr;
+     (Plugin  : Plugin_Ptr;
+      Buffer  : Buffer_Ptr;
       Message : String) return Boolean
    with Pre => Message'Length > 0;
    --  Execute a command and return true if successful, false otherwise
 
    procedure Run_Command
-     (Buffer  : Buffer_Ptr;
+     (Plugin  : Plugin_Ptr;
+      Buffer  : Buffer_Ptr;
       Message : String)
    with Pre => Message'Length > 0;
    --  Execute a command and raise Program_Error if unsuccessful
 
-   procedure Send_Message (Server, Recipient, Message : String);
+   procedure Send_Message
+     (Plugin : Plugin_Ptr;
+      Server, Recipient, Message : String);
    --  Send an IRC message to a user or channel
    --
    --  For example, to send a message to #ada on freenode:
@@ -245,26 +266,27 @@ package WeeChat is
    function Get_Nick (Host : String) return String;
 
    procedure Send_Signal
-     (Signal      : String;
+     (Plugin      : Plugin_Ptr;
+      Signal      : String;
       Kind        : Data_Kind;
       Signal_Data : Void_Ptr);
    --  Send a signal
 
    function Set_Timer
-     (Interval     : Duration;
+     (Plugin       : Plugin_Ptr;
+      Interval     : Duration;
       Align_Second : Natural;
       Max_Calls    : Natural;
-      Callback     : On_Timer_Callback;
-      Data         : Void_Ptr := Null_Void) return Timer;
+      Callback     : On_Timer_Callback) return Timer;
 
    procedure Cancel_Timer (Object : Timer)
      with Pre => Object /= No_Timer;
 
-   procedure Set_Title (Title : String);
+   procedure Set_Title (Plugin : Plugin_Ptr; Title : String);
 
-   function Get_Info (Name, Arguments : String) return String;
+   function Get_Info (Plugin : Plugin_Ptr; Name, Arguments : String) return String;
 
-   function Get_Info (Name : String) return String;
+   function Get_Info (Plugin : Plugin_Ptr; Name : String) return String;
 
    -----------------------------------------------------------------------------
 
@@ -274,7 +296,7 @@ package WeeChat is
 
    type Option_Kind is (Boolean_Type, Integer_Type, String_Type, Color_Type);
 
-   type Config_Option is tagged private;
+   type Config_Option is private;
 
    function Reset (Object : Config_Option) return Option_Set;
    --  Reset the option to its default value
@@ -300,15 +322,15 @@ package WeeChat is
    function Kind (Object : Config_Option) return Option_Kind;
 
    function Value (Object : Config_Option) return Boolean
-     with Pre'Class => Object.Kind = Boolean_Type;
+     with Pre => Kind (Object) = Boolean_Type;
 
    function Value (Object : Config_Option) return Integer
-     with Pre'Class => Object.Kind = Integer_Type;
+     with Pre => Kind (Object) = Integer_Type;
 
    function Value (Object : Config_Option) return String
-     with Pre'Class => Object.Kind = String_Type;
+     with Pre => Kind (Object) = String_Type;
 
-   function Get_Config_Option (Name : String) return Config_Option;
+   function Get_Config_Option (Plugin : Plugin_Ptr; Name : String) return Config_Option;
    --  Return the option for the given name
 
 private
@@ -327,14 +349,16 @@ private
 
    type Completion_Ptr is access all Pointer;
 
-   type Timer is new Hook_Ptr;
-
-   No_Timer : constant Timer := null;
+   type Timer is record
+      Result : Hook_Ptr;
+      Plugin : Plugin_Ptr;
+   end record;
 
    type Config_Option_Ptr is access all Pointer;
 
-   type Config_Option is tagged record
-      Pointer : Config_Option_Ptr := raise Program_Error;
+   type Config_Option is record
+      Pointer : Config_Option_Ptr;
+      Plugin  : Plugin_Ptr;
    end record;
 
    for Callback_Result use
@@ -357,11 +381,6 @@ private
    for Option_Unset'Size use int'Size;
 
    -----------------------------------------------------------------------------
-
-   package L1 renames Ada.Characters.Latin_1;
-
-   subtype C_String is String
-     with Dynamic_Predicate => C_String (C_String'Last) = L1.NUL;
 
    type Long_Long_Int is range -(2**63) .. +(2**63 - 1);
    --  Based on C99 long long int
@@ -1009,23 +1028,23 @@ private
          Completion       : C_String;
          Callback         : access function
            (Callback : On_Command_Callback;
-            Data     : Void_Ptr;
+            Data     : Data_Ptr;
             Buffer   : Buffer_Ptr;
             Argc     : int;
             Argv     : access Interfaces.C.Strings.chars_ptr;
             Argv_EOL : access Interfaces.C.Strings.chars_ptr) return Callback_Result;
          Callback_Pointer : On_Command_Callback;
-         Callback_Data    : Void_Ptr) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Command_Run : access function
         (Plugin   : access T_Weechat_Plugin;
          Command  : C_String;
          Callback : access function
            (Callback : On_Command_Run_Callback;
-            Data     : Void_Ptr;
+            Data     : Data_Ptr;
             Buffer   : Buffer_Ptr;
             Command  : Interfaces.C.Strings.chars_ptr) return Callback_Result;
          Callback_Pointer : On_Command_Run_Callback;
-         Callback_Data    : Void_Ptr) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Timer : access function
         (Plugin       : access T_Weechat_Plugin;
          Interval     : long;
@@ -1033,10 +1052,10 @@ private
          Max_Calls    : int;
          Callback     : access function
            (Callback        : On_Timer_Callback;
-            Data            : Void_Ptr;
+            Data            : Data_Ptr;
             Remaining_Calls : int) return Callback_Result;
          Callback_Pointer : On_Timer_Callback;
-         Callback_Data    : Void_Ptr) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_FD : access function
         (Plugin         : access T_Weechat_Plugin;
          FD             : int;
@@ -1106,7 +1125,7 @@ private
          Strip_Colors : int;
          Callback     : access function
            (Callback   : On_Print_Callback;
-            Data       : Void_Ptr;
+            Data       : Data_Ptr;
             Buffer     : Buffer_Ptr;
             Date       : Time_T;
             Tagc       : int;
@@ -1116,18 +1135,18 @@ private
             Prefix     : Interfaces.C.Strings.chars_ptr;
             Message    : Interfaces.C.Strings.chars_ptr) return Callback_Result;
          Callback_Pointer : On_Print_Callback;
-         Callback_Data    : Void_Ptr) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Signal : access function
         (Plugin   : access T_Weechat_Plugin;
          Signal   : C_String;
          Callback : access function
            (Callback    : On_Signal_Callback;
-            Data        : Void_Ptr;
+            Data        : Data_Ptr;
             Signal      : Interfaces.C.Strings.chars_ptr;
             Type_Data   : Interfaces.C.Strings.chars_ptr;
             Signal_Data : Void_Ptr) return Callback_Result;
          Callback_Pointer : On_Signal_Callback;
-         Callback_Data    : Void_Ptr) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Signal_Send : access function
         (Signal      : C_String;
          Type_Data   : C_String;
@@ -1161,12 +1180,12 @@ private
          Description : C_String;
          Callback    : access function
            (Callback   : On_Completion_Callback;
-            Data       : Void_Ptr;
+            Data       : Data_Ptr;
             Item       : Interfaces.C.Strings.chars_ptr;
             Buffer     : Buffer_Ptr;
             Completion : Completion_Ptr) return Callback_Result;
          Callback_Pointer : On_Completion_Callback;
-         Callback_Data    : Void_Ptr) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Completion_Get_String : access function
         (Completion : System.Address;
          Property   : Interfaces.C.Strings.chars_ptr) return Interfaces.C.Strings.chars_ptr;
@@ -1180,12 +1199,12 @@ private
          Modifier : C_String;
          Callback : access function
            (Callback      : On_Modifier_Callback;
-            Data          : Void_Ptr;
+            Data          : Data_Ptr;
             Modifier      : Interfaces.C.Strings.chars_ptr;
             Modifier_Data : Interfaces.C.Strings.chars_ptr;
             Text          : Interfaces.C.Strings.chars_ptr) return Interfaces.C.Strings.chars_ptr;
          Callback_Pointer : On_Modifier_Callback;
-         Callback_Data    : Void_Ptr) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Modifier_Exec : access function
         (Plugin   : access T_Weechat_Plugin;
          Modifier : Interfaces.C.Strings.chars_ptr;
@@ -1651,41 +1670,6 @@ private
 
    type Plugin_Ptr is access all T_Weechat_Plugin;
 
-   function Plugin_Init
-     (Plugin : Plugin_Ptr;
-      Argc   : int;
-      Argv   : System.Address) return Callback_Result
-   with Export, Convention => C, External_Name => "weechat_plugin_init";
-
-   function Plugin_End (Plugin : Plugin_Ptr) return Callback_Result
-     with Export, Convention => C, External_Name => "weechat_plugin_end";
-
-   type Plugin_Meta_Data is record
-     Name, Author, Description, Version, License : SU.Unbounded_String;
-   end record;
-
-   Plugin_API_Version : constant String := "20170530-02" & L1.NUL
-     with Export, Convention => C, External_Name => "weechat_plugin_api_version";
-   --  Generated for version 1.9.1, the version packaged in Ubuntu 18.04 LTS
-
-   --  WeeChat assumes the .so library contains the symbols below, but
-   --  the strings look garbled after the plug-in has loaded. However, if
-   --  we copy the pointers to the various components in parameter Plugin
-   --  in Plugin_Init, then the strings will look ok.
-
-   Plugin_Name : Interfaces.C.Strings.chars_ptr
-     with Export, Convention => C, External_Name => "weechat_plugin_name";
-
-   Plugin_Author : Interfaces.C.Strings.chars_ptr
-     with Export, Convention => C, External_Name => "weechat_plugin_author";
-
-   Plugin_Description : Interfaces.C.Strings.chars_ptr
-     with Export, Convention => C, External_Name => "weechat_plugin_description";
-
-   Plugin_Version : Interfaces.C.Strings.chars_ptr
-     with Export, Convention  => C, External_Name => "weechat_plugin_version";
-
-   Plugin_License : Interfaces.C.Strings.chars_ptr
-     with Export, Convention => C, External_Name => "weechat_plugin_license";
+   No_Timer : constant Timer := (Result => null, Plugin => null);
 
 end WeeChat;
