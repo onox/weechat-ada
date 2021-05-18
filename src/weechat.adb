@@ -48,7 +48,7 @@ package body WeeChat is
                Next_Index : constant Positive := SF.Index (Lines, Separator, Index);
             begin
                Result (I) := SU.To_Unbounded_String (Lines (Index .. Next_Index - 1));
-               Index := Next_Index + 1;
+               Index := Next_Index + Separator'Length;
             end;
          end loop;
          Result (Result'Last) := SU.To_Unbounded_String (Lines (Index .. Lines'Last));
