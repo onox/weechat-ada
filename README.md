@@ -142,40 +142,28 @@ In order to build the library, you need to have:
 
  * An Ada 2012 compiler
 
- * GPRBuild and `make`
+ * [Alire][url-alire]
 
 ## Installing dependencies on Ubuntu 18.04 LTS
 
 Install the dependencies using apt:
 
 ```sh
-$ sudo apt install gnat-7 gprbuild make weechat-dev
+$ sudo apt install gnat-7 gprbuild weechat-dev
 ```
-
-## Installation
-
-A Makefile is provided to build the source code. Use `make` to build
-the source code:
-
-```
-$ make
-```
-
-You can override CFLAGS if desired. After having compiled the source code,
-the library can be installed by executing:
-
-```
-$ make PREFIX=/usr install
-```
-
-Change `PREFIX` to the preferred destination folder, for example `~/.local`.
 
 ## Using weechat-ada in your project
+
+Use the library in your crates as follows:
+
+```
+alr with weechat_ada
+```
 
 Specify the dependency in your \*.gpr project file:
 
 ```ada
-with "weechat";
+with "weechat_ada";
 ```
 
 You must make sure to build the plug-in as a Stand-Alone Library:
@@ -226,6 +214,7 @@ refers to this license:
 
     SPDX-License-Identifier: Apache-2.0
 
+  [url-alire]: https://alire.ada.dev/
   [url-apache]: https://opensource.org/licenses/Apache-2.0
   [url-contributing]: /CONTRIBUTING.md
   [url-weechat]: https://weechat.org/
