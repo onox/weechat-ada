@@ -1,4 +1,2 @@
-/build/
-/bin/
-/auto.cgpr
-*.swp
+build/
+alire/
