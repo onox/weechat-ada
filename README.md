@@ -1,7 +1,7 @@
 [![License](https://img.shields.io/github/license/onox/weechat-ada.svg?color=blue)](https://github.com/onox/weechat-ada/blob/master/LICENSE)
 [![Build status](https://img.shields.io/shippable/5f778515ebfcd50007db63b9/master.svg)](https://app.shippable.com/github/onox/weechat-ada)
 [![GitHub release](https://img.shields.io/github/release/onox/weechat-ada.svg)](https://github.com/onox/weechat-ada/releases/latest)
-[![IRC](https://img.shields.io/badge/IRC-%23ada%20on%20freenode-orange.svg)](https://webchat.freenode.net/?channels=ada)
+[![IRC](https://img.shields.io/badge/IRC-%23ada%20on%20libera.chat-orange.svg)](https://libera.chat)
 
 # weechat-ada
 
