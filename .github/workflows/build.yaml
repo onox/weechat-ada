@@ -36,4 +36,4 @@ jobs:
       uses: alire-project/setup-alire@latest-devel
 
     - name: Build crates
-      run: make
+      run: alr build
