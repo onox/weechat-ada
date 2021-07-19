@@ -435,9 +435,9 @@ package body WeeChat is
 
       Data_Kind : constant String := CH.To_Lower (Kind'Image);
 
-      Result : Callback_Result;
+      Unused_Result : Callback_Result;
    begin
-      Result := Plugin.Hook_Signal_Send
+      Unused_Result := Plugin.Hook_Signal_Send
         (Signal & L1.NUL, Data_Kind (Data_Kind'First .. Data_Kind'Last - 5) & L1.NUL,
          Signal_Data);
    end Send_Signal;
