@@ -2,6 +2,7 @@
 [![License](https://img.shields.io/github/license/onox/weechat-ada.svg?color=blue)](https://github.com/onox/weechat-ada/blob/master/LICENSE)
 [![GitHub release](https://img.shields.io/github/release/onox/weechat-ada.svg)](https://github.com/onox/weechat-ada/releases/latest)
 [![IRC](https://img.shields.io/badge/IRC-%23ada%20on%20libera.chat-orange.svg)](https://libera.chat)
+[![Gitter chat](https://badges.gitter.im/gitterHQ/gitter.svg)](https://gitter.im/ada-lang/Lobby)
 
 # weechat-ada
 
