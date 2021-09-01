@@ -9,11 +9,18 @@
 
 Ada 2012 library for [WeeChat][url-weechat] plug-ins.
 
-The WeeChat plug-in datastructure currently only works with the one
-found in Ubuntu 18.04 LTS (WeeChat 1.9.1). If the library does not
+The WeeChat plug-in datastructure currently only works with WeeChat 1.9.1 or 2.8.
+If the library does not
 work for the version provided by your distribution, then you need to
-open an issue so we can take a look at solving this (probably by maintaining
-a modified version in a separate branch).
+open an issue so we can take a look at solving this.
+
+Because WeeChat plug-ins are not backward compatible, a plug-in intended
+for a specific version of WeeChat requires a specific release of weechat-ada:
+
+| Release | WeeChat version |
+|---------|-----------------|
+| v2.x.y  | 1.9.1           |
+| v3.x.y  | 2.8             |
 
 WeeChat provides many functions to plug-ins and many of them are not needed
 for a language like Ada:
@@ -214,6 +221,9 @@ The first line of each Ada file should contain an SPDX license identifier tag th
 refers to this license:
 
     SPDX-License-Identifier: Apache-2.0
+
+Note that WeeChat itself is licensed under GPL3+ and if you use "encapsulated"
+for `Library_Standalone` then the GNAT RTS will be put inside your library.
 
   [url-alire]: https://alire.ada.dev/
   [url-apache]: https://opensource.org/licenses/Apache-2.0
