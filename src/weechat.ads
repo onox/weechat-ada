@@ -45,8 +45,8 @@ package WeeChat is
    subtype C_String is String
      with Dynamic_Predicate => C_String (C_String'Last) = L1.NUL;
 
-   Plugin_API_Version : constant String := "20170530-02" & L1.NUL;
-   --  Generated for version 1.9.1, the version packaged in Ubuntu 18.04 LTS
+   Plugin_API_Version : constant String := "20200301-03" & L1.NUL;
+   --  Generated for version 2.8, the version packaged in Ubuntu 20.04 LTS
 
    -----------------------------------------------------------------------------
 
@@ -83,6 +83,8 @@ package WeeChat is
 
    type Completion_Ptr is private;
 
+   type Hashtable_Ptr is private;
+
    type Timer is private;
 
    No_Timer : constant Timer;
@@ -94,6 +96,29 @@ package WeeChat is
    type Data_Kind is (String_Type, Int_Type, Pointer_Type);
 
    type Completion_Position is (Any_Position, Beginning_Of_List, End_Of_List);
+
+   type Line_Buffer_Kind is (Formatted, Free);
+
+   type Notify_Level is (None, Low, Message, Private_Message, Highlight);
+
+   type Line_Data (Kind : Line_Buffer_Kind) is record
+      Buffer    : SU.Unbounded_String;
+      Name      : SU.Unbounded_String;
+      Message   : SU.Unbounded_String;
+      Displayed : Boolean;
+      case Kind is
+         when Formatted =>
+            Date         : Ada.Calendar.Time;
+            Date_Printed : Ada.Calendar.Time;
+            Date_Display : SU.Unbounded_String;
+            Tags         : SU.Unbounded_String;
+            Level        : Notify_Level;
+            Highlight    : Boolean;
+            Prefix       : SU.Unbounded_String;
+         when Free =>
+            Line_Number : Natural;
+      end case;
+   end record;
 
    -----------------------------------------------------------------------------
 
@@ -118,6 +143,10 @@ package WeeChat is
       Item       : String;
       Buffer     : Buffer_Ptr;
       Completion : Completion_Ptr) return Callback_Result;
+
+   type On_Line_Callback is not null access procedure
+     (Plugin : Plugin_Ptr;
+      Line   : in out Line_Data);
 
    type On_Print_Callback is not null access function
      (Plugin    : Plugin_Ptr;
@@ -215,6 +244,20 @@ package WeeChat is
    --
    --  The callback can be given a priority by prefixing the name
    --  with `priority|`.
+
+   procedure On_Line
+     (Plugin       : Plugin_Ptr;
+      Buffer_Type  : Line_Buffer_Kind;
+      Buffer_Name  : String;
+      Tags         : String;
+      Callback     : On_Line_Callback);
+   --  Register a callback for when a line is to be printed in a buffer
+   --
+   --  Buffer_Name is a comma-separated list of masks, or empty , or `*`.
+   --
+   --  Wildcard `*` is allowed in tags. Tags must be separated by a
+   --  a `,` ("or" operation) and can be combined with a `+` ("and"
+   --  operation).
 
    procedure On_Print
      (Plugin       : Plugin_Ptr;
@@ -349,6 +392,8 @@ private
 
    type Completion_Ptr is access all Pointer;
 
+   type Hashtable_Ptr is access all Pointer;
+
    type Timer is record
       Result : Hook_Ptr;
       Plugin : Plugin_Ptr;
@@ -423,7 +468,7 @@ private
 --   Weechat_List_Pos_End       : aliased constant String := "end" & L1.NUL;
 
 --   Weechat_Hashtable_Integer : aliased constant String := "integer" & L1.NUL;
---   Weechat_Hashtable_String  : aliased constant String := "string" & L1.NUL;
+   Weechat_Hashtable_String : aliased constant String := "string" & L1.NUL;
 --   Weechat_Hashtable_Pointer : aliased constant String := "pointer" & L1.NUL;
 --   Weechat_Hashtable_Buffer  : aliased constant String := "buffer" & L1.NUL;
 --   Weechat_Hashtable_Time    : aliased constant String := "time" & L1.NUL;
@@ -476,6 +521,8 @@ private
       Priority    : aliased int;
       Initialized : aliased int;
       Debug       : aliased int;
+      Upgrading   : aliased int;
+      Variables   : Hashtable_Ptr;
       Prev_Plugin : access T_Weechat_Plugin;
       Next_Plugin : access T_Weechat_Plugin;
 
@@ -533,6 +580,10 @@ private
         (Arg1 : Interfaces.C.Strings.chars_ptr;
          Arg2 : Interfaces.C.Strings.chars_ptr;
          Arg3 : int) return int;
+      String_Match_List  : access function
+        (Arg1 : Interfaces.C.Strings.chars_ptr;
+         Arg2 : access Interfaces.C.Strings.chars_ptr;
+         Arg3 : int) return int;
       String_Replace : access function
         (Arg1 : Interfaces.C.Strings.chars_ptr;
          Arg2 : Interfaces.C.Strings.chars_ptr;
@@ -582,9 +633,10 @@ private
       String_Split : access function
         (Arg1 : Interfaces.C.Strings.chars_ptr;
          Arg2 : Interfaces.C.Strings.chars_ptr;
-         Arg3 : int;
+         Arg3 : Interfaces.C.Strings.chars_ptr;
          Arg4 : int;
-         Arg5 : access int) return System.Address;
+         Arg5 : int;
+         Arg6 : access int) return System.Address;
       String_Split_Shell : access function
         (Arg1 : Interfaces.C.Strings.chars_ptr;
          Arg2 : access int) return System.Address;
@@ -601,13 +653,15 @@ private
       String_Remove_Color : access function
         (Arg1 : Interfaces.C.Strings.chars_ptr;
          Arg2 : Interfaces.C.Strings.chars_ptr) return Interfaces.C.Strings.chars_ptr;
-      String_Encode_Base64 : access procedure
-        (Arg1 : Interfaces.C.Strings.chars_ptr;
-         Arg2 : int;
-         Arg3 : Interfaces.C.Strings.chars_ptr);
-      String_Decode_Base64 : access function
-        (Arg1 : Interfaces.C.Strings.chars_ptr;
-         Arg2 : Interfaces.C.Strings.chars_ptr) return int;
+      String_Base_Encode : access procedure
+        (Arg1 : int;
+         Arg2 : Interfaces.C.Strings.chars_ptr;
+         Arg3 : int;
+         Arg4 : Interfaces.C.Strings.chars_ptr);
+      String_Base_Decode : access function
+        (Arg1 : int;
+         Arg2 : Interfaces.C.Strings.chars_ptr;
+         Arg3 : Interfaces.C.Strings.chars_ptr) return int;
       String_Hex_Dump : access function
         (Arg1 : Interfaces.C.Strings.chars_ptr;
          Arg2 : int;
@@ -670,6 +724,23 @@ private
         (Arg1 : Interfaces.C.Strings.chars_ptr;
          Arg2 : int) return Interfaces.C.Strings.chars_ptr;
 
+      --  Crypto
+      Crypto_Hash : access function
+        (Arg1 : System.Address;
+         Arg2 : int;
+         Arg3 : Interfaces.C.Strings.chars_ptr;
+         Arg4 : System.Address;
+         Arg5 : access int) return int;
+      Crypto_Hash_Pbkdf2 : access function
+        (Arg1 : System.Address;
+         Arg2 : int;
+         Arg3 : Interfaces.C.Strings.chars_ptr;
+         Arg4 : System.Address;
+         Arg5 : int;
+         Arg6 : int;
+         Arg7 : System.Address;
+         Arg8 : access int) return int;
+
       --  Directories
       Mkdir_Home : access function (Arg1 : Interfaces.C.Strings.chars_ptr; Arg2 : int) return int;
       Mkdir : access function (Arg1 : Interfaces.C.Strings.chars_ptr; Arg2 : int) return int;
@@ -679,8 +750,9 @@ private
       Exec_On_Files : access procedure
         (Arg1 : Interfaces.C.Strings.chars_ptr;
          Arg2 : int;
-         Arg3 : access procedure (Arg1 : System.Address; Arg2 : Interfaces.C.Strings.chars_ptr);
-         Arg4 : System.Address);
+         Arg3 : int;
+         Arg4 : access procedure (Arg1 : System.Address; Arg2 : Interfaces.C.Strings.chars_ptr);
+         Arg5 : System.Address);
       File_Get_Content : access function
         (Arg1 : Interfaces.C.Strings.chars_ptr) return Interfaces.C.Strings.chars_ptr;
 
@@ -718,6 +790,7 @@ private
       List_Next       : access function (Arg1 : System.Address) return System.Address;
       List_Prev       : access function (Arg1 : System.Address) return System.Address;
       List_String : access function (Arg1 : System.Address) return Interfaces.C.Strings.chars_ptr;
+      List_User_Data  : access function (Arg1 : System.Address) return System.Address;
       List_Size       : access function (Arg1 : System.Address) return int;
       List_Remove     : access procedure (Arg1 : System.Address; Arg2 : System.Address);
       List_Remove_All : access procedure (Arg1 : System.Address);
@@ -757,67 +830,71 @@ private
 
       --  Hashtables
       Hashtable_New : access function
-        (Arg1 : int;
-         Arg2 : Interfaces.C.Strings.chars_ptr;
-         Arg3 : Interfaces.C.Strings.chars_ptr;
-         Arg4 : access function
-           (Arg1 : System.Address;
-            Arg2 : System.Address) return Unsigned_Long_Long;
-         Arg5 : access function
-           (Arg1 : System.Address;
-            Arg2 : System.Address;
-            Arg3 : System.Address) return int)
-         return System.Address;
+        (Size                 : int;
+         Type_Keys            : C_String;
+         Type_Values          : C_String;
+         Callback_Hash_Key    : access function
+           (Table : Hashtable_Ptr;
+            Key   : System.Address) return Unsigned_Long_Long;
+         Callback_Key_Compare : access function
+           (Table : Hashtable_Ptr;
+            Key_1 : System.Address;
+            Key_2 : System.Address) return int)
+         return Hashtable_Ptr;
       Hashtable_Set_With_Size : access function
-        (Arg1 : System.Address;
-         Arg2 : System.Address;
-         Arg3 : int;
-         Arg4 : System.Address;
-         Arg5 : int) return System.Address;
+        (Table      : Hashtable_Ptr;
+         Key        : System.Address;
+         Key_Size   : int;
+         Value      : System.Address;
+         Value_Size : int) return System.Address;
       Hashtable_Set : access function
-        (Arg1 : System.Address;
-         Arg2 : System.Address;
-         Arg3 : System.Address) return System.Address;
+        (Table  : Hashtable_Ptr;
+         Key    : C_String;
+         Value  : C_String) return System.Address;
       Hashtable_Get : access function
-        (Arg1 : System.Address;
-         Arg2 : System.Address) return System.Address;
+        (Table : Hashtable_Ptr;
+         Key   : C_String) return Interfaces.C.Strings.chars_ptr;
       Hashtable_Has_Key : access function
-        (Arg1 : System.Address;
-         Arg2 : System.Address) return int;
+        (Table : Hashtable_Ptr;
+         Key   : System.Address) return int;
       Hashtable_Map : access procedure
-        (Arg1 : System.Address;
-         Arg2 : access procedure
-           (Arg1 : System.Address;
-            Arg2 : System.Address;
-            Arg3 : System.Address;
-            Arg4 : System.Address);
-         Arg3 : System.Address);
+        (Table         : Hashtable_Ptr;
+         Callback      : access procedure
+           (Data  : Data_Ptr;
+            Table : Hashtable_Ptr;
+            Key   : System.Address;
+            Value : System.Address);
+         Callback_Data : Data_Ptr);
       Hashtable_Map_String : access procedure
-        (Arg1 : System.Address;
-         Arg2 : access procedure
-           (Arg1 : System.Address;
-            Arg2 : System.Address;
-            Arg3 : Interfaces.C.Strings.chars_ptr;
-            Arg4 : Interfaces.C.Strings.chars_ptr);
-         Arg3 : System.Address);
-      Hashtable_Dup         : access function (Arg1 : System.Address) return System.Address;
+        (Table    : Hashtable_Ptr;
+         Callback : access procedure
+           (Data  : Data_Ptr;
+            Table : Hashtable_Ptr;
+            Key   : Interfaces.C.Strings.chars_ptr;
+            Value : Interfaces.C.Strings.chars_ptr);
+         Callback_Data : Data_Ptr);
+      Hashtable_Dup         : access function (Table : Hashtable_Ptr) return Hashtable_Ptr;
       Hashtable_Get_Integer : access function
-        (Arg1 : System.Address;
-         Arg2 : Interfaces.C.Strings.chars_ptr) return int;
+        (Table    : Hashtable_Ptr;
+         Property : C_String) return int;
       Hashtable_Get_String : access function
-        (Arg1 : System.Address;
-         Arg2 : Interfaces.C.Strings.chars_ptr) return Interfaces.C.Strings.chars_ptr;
+        (Table    : Hashtable_Ptr;
+         Property : C_String) return Interfaces.C.Strings.chars_ptr;
       Hashtable_Set_Pointer : access procedure
-        (Arg1 : System.Address;
-         Arg2 : Interfaces.C.Strings.chars_ptr;
-         Arg3 : System.Address);
+        (Table    : Hashtable_Ptr;
+         Property : C_String;
+         Pointer  : System.Address);
       Hashtable_Add_To_Infolist : access function
-        (Arg1 : System.Address;
-         Arg2 : System.Address;
-         Arg3 : Interfaces.C.Strings.chars_ptr) return int;
-      Hashtable_Remove     : access procedure (Arg1 : System.Address; Arg2 : System.Address);
-      Hashtable_Remove_All : access procedure (Arg1 : System.Address);
-      Hashtable_Free       : access procedure (Arg1 : System.Address);
+        (Table  : Hashtable_Ptr;
+         Item   : System.Address;
+         Prefix : C_String) return int;
+      Hashtable_Add_From_Infolist : access function
+        (Table  : Hashtable_Ptr;
+         List   : System.Address;
+         Prefix : C_String) return int;
+      Hashtable_Remove     : access procedure (Table : Hashtable_Ptr; Key : System.Address);
+      Hashtable_Remove_All : access procedure (Table : Hashtable_Ptr);
+      Hashtable_Free       : access procedure (Table : Hashtable_Ptr);
 
       --  Configuration files
       Config_New : access function
@@ -997,7 +1074,7 @@ private
       --  Key bindings
       Key_Bind : access function
         (Context : Interfaces.C.Strings.chars_ptr;
-         Keys    : System.Address) return int;
+         Keys    : Hashtable_Ptr) return int;
       Key_Unbind : access function
         (Context : Interfaces.C.Strings.chars_ptr;
          Key     : Interfaces.C.Strings.chars_ptr) return int;
@@ -1064,37 +1141,37 @@ private
          Flag_Exception : int;
          Callback       : access function
            (Pointer : System.Address;
-            Data    : System.Address;
+            Data    : Data_Ptr;
             Fd      : int) return int;
          Callback_Pointer : System.Address;
-         Callback_Data    : System.Address) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Process : access function
         (Plugin   : access T_Weechat_Plugin;
          Command  : Interfaces.C.Strings.chars_ptr;
          Timeout  : int;
          Callback : access function
            (Pointer      : System.Address;
-            Data         : System.Address;
+            Data         : Data_Ptr;
             Command      : Interfaces.C.Strings.chars_ptr;
             Return_Code  : int;
             Standard_Out : Interfaces.C.Strings.chars_ptr;
             Standard_Err : Interfaces.C.Strings.chars_ptr) return int;
          Callback_Pointer : System.Address;
-         Callback_Data    : System.Address) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Process_Hashtable : access function
         (Plugin   : access T_Weechat_Plugin;
          Command  : Interfaces.C.Strings.chars_ptr;
-         Options  : System.Address;
+         Options  : Hashtable_Ptr;
          Timeout  : int;
          Callback : access function
            (Pointer      : System.Address;
-            Data         : System.Address;
+            Data         : Data_Ptr;
             Command      : Interfaces.C.Strings.chars_ptr;
             Return_Code  : int;
             Standard_Out : Interfaces.C.Strings.chars_ptr;
             Standard_Err : Interfaces.C.Strings.chars_ptr) return int;
          Callback_Pointer : System.Address;
-         Callback_Data    : System.Address) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Connect : access function
         (Plugin          : access T_Weechat_Plugin;
          Proxy           : Interfaces.C.Strings.chars_ptr;
@@ -1109,14 +1186,25 @@ private
          Local_Hostname  : Interfaces.C.Strings.chars_ptr;
          Callback        : access function
            (Pointer    : System.Address;
-            Data       : System.Address;
+            Data       : Data_Ptr;
             Status     : int;
             Tls_Rc     : int;
             Sock       : int;
             Error      : Interfaces.C.Strings.chars_ptr;
             Ip_Address : Interfaces.C.Strings.chars_ptr) return int;
          Callback_Pointer : System.Address;
-         Callback_Data    : System.Address) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
+      Hook_Line : access function
+        (Plugin       : access T_Weechat_Plugin;
+         Buffer_Type  : C_String;
+         Buffer_Name  : C_String;
+         Tags         : C_String;
+         Callback     : access function
+           (Callback : On_Line_Callback;
+            Data     : Data_Ptr;
+            Line     : Hashtable_Ptr) return Hashtable_Ptr;
+         Callback_Pointer : On_Line_Callback;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Print : access function
         (Plugin       : access T_Weechat_Plugin;
          Buffer       : Buffer_Ptr;
@@ -1156,14 +1244,14 @@ private
          Signal   : Interfaces.C.Strings.chars_ptr;
          Callback : access function
            (Pointer   : System.Address;
-            Data      : System.Address;
+            Data      : Data_Ptr;
             Signal    : Interfaces.C.Strings.chars_ptr;
-            Hashtable : System.Address) return int;
+            Hashtable : Hashtable_Ptr) return int;
          Callback_Pointer : System.Address;
-         Callback_Data    : System.Address) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Hsignal_Send : access function
         (Signal    : Interfaces.C.Strings.chars_ptr;
-         Hashtable : System.Address) return int;
+         Hashtable : Hashtable_Ptr) return int;
       Hook_Config : access function
         (Plugin   : access T_Weechat_Plugin;
          Option   : Interfaces.C.Strings.chars_ptr;
@@ -1230,11 +1318,11 @@ private
          Output_Description : Interfaces.C.Strings.chars_ptr;
          Callback           : access function
            (Pointer   : System.Address;
-            Data      : System.Address;
+            Data      : Data_Ptr;
             Name      : Interfaces.C.Strings.chars_ptr;
-            Hashtable : System.Address) return System.Address;
+            Hashtable : System.Address) return Hashtable_Ptr;
          Callback_Pointer : System.Address;
-         Callback_Data    : System.Address) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Infolist : access function
         (Plugin              : access T_Weechat_Plugin;
          Name                : Interfaces.C.Strings.chars_ptr;
@@ -1264,10 +1352,10 @@ private
          Area     : Interfaces.C.Strings.chars_ptr;
          Callback : access function
            (Pointer : System.Address;
-            Data    : System.Address;
-            Info    : System.Address) return System.Address;
+            Data    : Data_Ptr;
+            Info    : Hashtable_Ptr) return Hashtable_Ptr;
          Callback_Pointer : System.Address;
-         Callback_Data    : System.Address) return Hook_Ptr;
+         Callback_Data    : Data_Ptr) return Hook_Ptr;
       Hook_Set : access procedure
         (Hook     : Hook_Ptr;
          Property : Interfaces.C.Strings.chars_ptr;
@@ -1450,6 +1538,11 @@ private
         (Plugin  : access T_Weechat_Plugin;
          Buffer  : Buffer_Ptr;
          Command : C_String) return Callback_Result;
+      Command_Options : access function
+        (Plugin  : access T_Weechat_Plugin;
+         Buffer  : Buffer_Ptr;
+         Command : C_String;
+         Options : Hashtable_Ptr) return Callback_Result;
 
       --  Network
       Network_Pass_Proxy : access function
@@ -1470,7 +1563,7 @@ private
       Info_Get_Hashtable : access function
         (Plugin    : access T_Weechat_Plugin;
          Info_Name : Interfaces.C.Strings.chars_ptr;
-         Hashtable : System.Address) return System.Address;
+         Hashtable : Hashtable_Ptr) return Hashtable_Ptr;
 
       --  Infolists
       Infolist_New : access function (Arg1 : access T_Weechat_Plugin) return System.Address;

@@ -152,12 +152,12 @@ In order to build the library, you need to have:
 
  * [Alire][url-alire]
 
-## Installing dependencies on Ubuntu 18.04 LTS
+## Installing dependencies on Ubuntu 20.04 LTS
 
 Install the dependencies using apt:
 
 ```sh
-$ sudo apt install gnat-7 gprbuild weechat-dev
+$ sudo apt install gnat-10 gprbuild weechat-dev
 ```
 
 ## Using weechat-ada in your project

@@ -16,6 +16,7 @@
 
 with Ada.Calendar.Time_Zones;
 with Ada.Characters.Handling;
+with Ada.Characters.Conversions;
 with Ada.Exceptions;
 with Ada.Strings.Maps;
 with Ada.Unchecked_Conversion;
@@ -171,7 +172,7 @@ package body WeeChat is
    function Completion_Callback
      (Callback   : On_Completion_Callback;
       Data       : Data_Ptr;
-      Item       : Interfaces.C.Strings.chars_ptr;
+      Item       : chars_ptr;
       Buffer     : Buffer_Ptr;
       Completion : Completion_Ptr) return Callback_Result is
    begin
@@ -197,6 +198,249 @@ package body WeeChat is
          return Text;
    end Modifier_Callback;
 
+   ----------------------------------------------------------------------------
+
+   function Get_Value (Plugin : Plugin_Ptr; Data : Hashtable_Ptr; Key : String) return String is
+      Result : constant chars_ptr := Plugin.Hashtable_Get (Data, Key & L1.NUL);
+   begin
+      if Result /= Null_Ptr then
+         return Value (Result);
+      else
+         raise Constraint_Error with "Key '" & Key & "' does not exist";
+      end if;
+   end Get_Value;
+
+   function Get_Value (Plugin : Plugin_Ptr; Data : Hashtable_Ptr; Key : String) return Integer is
+     (Integer'Value (Get_Value (Plugin, Data, Key)));
+
+   function Get_Value (Plugin : Plugin_Ptr; Data : Hashtable_Ptr; Key : String) return Boolean is
+     (Get_Value (Plugin, Data, Key) = 1);
+
+   function Get_Value
+     (Plugin : Plugin_Ptr;
+      Data   : Hashtable_Ptr;
+      Key    : String) return SU.Unbounded_String
+   is (SU.To_Unbounded_String (String'(Get_Value (Plugin, Data, Key))));
+
+   function Get_Value
+     (Plugin : Plugin_Ptr;
+      Data   : Hashtable_Ptr;
+      Key    : String) return Line_Buffer_Kind
+   is
+      Value : constant String := Get_Value (Plugin, Data, Key);
+   begin
+      if Value = "formatted" then
+         return Formatted;
+      elsif Value = "free" then
+         return Free;
+      else
+         raise Constraint_Error;
+      end if;
+   end Get_Value;
+
+   function Get_Value
+     (Plugin : Plugin_Ptr;
+      Data   : Hashtable_Ptr;
+      Key    : String) return Notify_Level
+   is
+      Value : constant Integer := Get_Value (Plugin, Data, Key);
+   begin
+      return
+        (case Value is
+            when -1 => None,
+            when 0  => Low,
+            when 1  => Message,
+            when 2  => Private_Message,
+            when 3  => Highlight,
+            when others => raise Constraint_Error);
+   end Get_Value;
+
+   function Unix_Time_To_Ada (Value : Duration) return Ada.Calendar.Time is
+      use Ada.Calendar;
+
+      Time_Epoch  : constant Time := Time_Of (Year => 1970, Month => 1, Day => 1);
+      Time_Offset : constant Duration := Duration (Time_Zones.UTC_Time_Offset (Time_Epoch)) * 60;
+   begin
+      return Time_Epoch + Time_Offset + Value;
+   end Unix_Time_To_Ada;
+
+   function Ada_To_Unix_Time (Value : Ada.Calendar.Time) return Duration is
+      use Ada.Calendar;
+
+      Time_Epoch  : constant Time := Time_Of (Year => 1970, Month => 1, Day => 1);
+      Time_Offset : constant Duration := Duration (Time_Zones.UTC_Time_Offset (Time_Epoch)) * 60;
+   begin
+      return Value - (Time_Epoch + Time_Offset);
+   end Ada_To_Unix_Time;
+
+   function Get_Value
+     (Plugin : Plugin_Ptr;
+      Table  : Hashtable_Ptr;
+      Key    : String) return Ada.Calendar.Time
+   is
+      Value : constant Integer := Get_Value (Plugin, Table, Key);
+   begin
+      return Unix_Time_To_Ada (Duration (Value));
+   end Get_Value;
+
+   procedure Set_Value
+     (Plugin : Plugin_Ptr;
+      Table  : Hashtable_Ptr;
+      Key    : String;
+      Value  : String)
+   is
+      Unused_Item : constant System.Address :=
+        Plugin.Hashtable_Set (Table, Key & L1.NUL, Value & L1.NUL);
+   begin
+      null;
+   end Set_Value;
+
+   procedure Set_Value
+     (Plugin : Plugin_Ptr;
+      Table  : Hashtable_Ptr;
+      Key    : String;
+      Value  : Ada.Calendar.Time) is
+   begin
+      Set_Value (Plugin, Table, Key, Integer'Image (Integer (Ada_To_Unix_Time (Value))));
+   end Set_Value;
+
+   procedure Set_Value
+     (Plugin : Plugin_Ptr;
+      Table  : Hashtable_Ptr;
+      Key    : String;
+      Value  : Notify_Level) is
+   begin
+      Set_Value (Plugin, Table, Key,
+        (case Value is
+            when None            => "-1",
+            when Low             => "0",
+            when Message         => "1",
+            when Private_Message => "2",
+            when Highlight       => "3"));
+   end Set_Value;
+
+   procedure Set_Value
+     (Plugin : Plugin_Ptr;
+      Table  : Hashtable_Ptr;
+      Key    : String;
+      Value  : Boolean) is
+   begin
+      Set_Value (Plugin, Table, Key, (if Value then "1" else "0"));
+   end Set_Value;
+
+   function Create_Line_Data (Plugin : Plugin_Ptr; Line : Hashtable_Ptr) return Line_Data is
+      Kind    : constant Line_Buffer_Kind    := Get_Value (Plugin, Line, "buffer_type");
+      Name    : constant SU.Unbounded_String := Get_Value (Plugin, Line, "buffer_name");
+      Message : constant SU.Unbounded_String := Get_Value (Plugin, Line, "message");
+
+      Displayed : constant Boolean := Get_Value (Plugin, Line, "displayed");
+
+      Buffer : constant SU.Unbounded_String := Get_Value (Plugin, Line, "buffer");
+   begin
+      case Kind is
+         when Formatted =>
+            return
+              (Kind         => Formatted,
+               Buffer       => Buffer,
+               Name         => Name,
+               Message      => Message,
+               Displayed    => Displayed,
+               Date         => Get_Value (Plugin, Line, "date"),
+               Date_Printed => Get_Value (Plugin, Line, "date_printed"),
+               Date_Display => Get_Value (Plugin, Line, "str_time"),
+               Tags         => Get_Value (Plugin, Line, "tags"),
+               Level        => Get_Value (Plugin, Line, "notify_level"),
+               Highlight    => Get_Value (Plugin, Line, "highlight"),
+               Prefix       => Get_Value (Plugin, Line, "prefix"));
+         when Free =>
+            return
+              (Kind         => Free,
+               Buffer       => Buffer,
+               Name         => Name,
+               Message      => Message,
+               Displayed    => Displayed,
+               Line_Number  => Get_Value (Plugin, Line, "y"));
+      end case;
+   end Create_Line_Data;
+
+   ----------------------------------------------------------------------------
+
+   function Line_Callback
+     (Callback   : On_Line_Callback;
+      Data       : Data_Ptr;
+      Line       : Hashtable_Ptr) return Hashtable_Ptr
+   is
+      use type Ada.Calendar.Time;
+      use type SU.Unbounded_String;
+
+      Keys_Count : constant := 10;
+      Long_Bytes : constant := long'Size / System.Storage_Unit;
+   begin
+      declare
+         Value  : constant Line_Data := Create_Line_Data (Data.Plugin, Line);
+         Result :          Line_Data := Value;
+      begin
+         Callback (Data.Plugin, Result);
+
+         return Table : constant Hashtable_Ptr :=
+           Data.Plugin.Hashtable_New
+             (Long_Bytes * Keys_Count,
+              Weechat_Hashtable_String, Weechat_Hashtable_String, null, null)
+         do
+            if Value.Buffer /= Result.Buffer then
+               Set_Value (Data.Plugin, Table, "buffer", +Result.Buffer);
+            end if;
+
+            if Value.Name /= Result.Name then
+               Set_Value (Data.Plugin, Table, "name", +Result.Name);
+            end if;
+
+            if Value.Message /= Result.Message then
+               Set_Value (Data.Plugin, Table, "message", +Result.Message);
+            end if;
+
+            case Result.Kind is
+               when Formatted =>
+                  if Value.Date /= Result.Date then
+                     Set_Value (Data.Plugin, Table, "date", Result.Date);
+                  end if;
+
+                  if Value.Date_Printed /= Result.Date_Printed then
+                     Set_Value (Data.Plugin, Table, "date_printed", Result.Date_Printed);
+                  end if;
+
+                  if Value.Date_Display /= Result.Date_Display then
+                     Set_Value (Data.Plugin, Table, "str_time", +Result.Date_Display);
+                  end if;
+
+                  if Value.Tags /= Result.Tags then
+                     Set_Value (Data.Plugin, Table, "tags", +Result.Tags);
+                  end if;
+
+                  if Value.Level /= Result.Level then
+                     Set_Value (Data.Plugin, Table, "notify_level", Result.Level);
+                  end if;
+
+                  if Value.Highlight /= Result.Highlight then
+                     Set_Value (Data.Plugin, Table, "highlight", Result.Highlight);
+                  end if;
+
+                  if Value.Prefix /= Result.Prefix then
+                     Set_Value (Data.Plugin, Table, "prefix", +Result.Prefix);
+                  end if;
+               when Free =>
+                  if Value.Line_Number /= Result.Line_Number then
+                     Set_Value (Data.Plugin, Table, "y", Integer'Image (Result.Line_Number));
+                  end if;
+            end case;
+         end return;
+      end;
+   exception
+      when E : others =>
+         Print_Error (Data.Plugin, E);
+         return Data.Plugin.Hashtable_New (8, "string" & L1.NUL, "string" & L1.NUL, null, null);
+   end Line_Callback;
+
    function Print_Callback
      (Callback   : On_Print_Callback;
       Data       : Data_Ptr;
@@ -220,18 +464,13 @@ package body WeeChat is
       function Get_Tag (Index : Positive) return String is
         (Value (Raw_Tags (size_t (Index))));
 
-      use Ada.Calendar;
-
-      Time_Epoch  : constant Time := Time_Of (Year => 1970, Month => 1, Day => 1);
-      Time_Offset : constant Duration := Duration (Time_Zones.UTC_Time_Offset (Time_Epoch)) * 60;
-
       Tags : String_List (1 .. Raw_Tags'Length);
    begin
       for Index in Tags'Range loop
          Tags (Index) := SU.To_Unbounded_String (Get_Tag (Index));
       end loop;
 
-      return Callback (Data.Plugin, Buffer, Time_Epoch + Time_Offset + Duration (Date),
+      return Callback (Data.Plugin, Buffer, Unix_Time_To_Ada (Duration (Date)),
         Tags, Displayed = 1, Highlight = 1, Value (Prefix), Value (Message));
    exception
       when E : others =>
@@ -391,6 +630,28 @@ package body WeeChat is
          new Data'(Plugin => Plugin));
       pragma Assert (Result /= null);
    end On_Modifier;
+
+   procedure On_Line
+     (Plugin       : Plugin_Ptr;
+      Buffer_Type  : Line_Buffer_Kind;
+      Buffer_Name  : String;
+      Tags         : String;
+      Callback     : On_Line_Callback)
+   is
+      Result : Hook_Ptr;
+   begin
+      Result := Plugin.Hook_Line
+        (Plugin,
+         (case Buffer_Type is
+            when Formatted => "formatted",
+            when Free      => "free") & L1.NUL,
+         Buffer_Name & L1.NUL,
+         Tags & L1.NUL,
+         Line_Callback'Access,
+         Callback,
+         new Data'(Plugin => Plugin));
+      pragma Assert (Result /= null);
+   end On_Line;
 
    procedure On_Print
      (Plugin       : Plugin_Ptr;
