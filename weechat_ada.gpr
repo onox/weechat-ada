@@ -1,7 +1,7 @@
 project Weechat_Ada is
 
    for Library_Name use "weechat-ada";
-   for Library_Version use "2.0.0";
+   for Library_Version use "3.0.0";
 
    for Create_Missing_Dirs use "True";
 
