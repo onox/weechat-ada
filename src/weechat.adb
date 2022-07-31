@@ -129,7 +129,7 @@ package body WeeChat is
       Buffer   : Buffer_Ptr;
       Argc     : int;
       Argv     : access chars_ptr;
-      Argv_EOL : access chars_ptr) return Callback_Result
+      Unused_Argv_EOL : access chars_ptr) return Callback_Result
    is
       Raw_Arguments : chars_ptr_array (1 .. size_t (Argc))
         with Address => (if Argv /= null then Argv.all'Address else System.Null_Address),
