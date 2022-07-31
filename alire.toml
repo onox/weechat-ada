@@ -1,6 +1,6 @@
 name = "weechat_ada"
 description = "Ada 2012 library for WeeChat plug-ins"
-version = "3.0.0"
+version = "3.0.1"
 website = "https://github.com/onox/weechat-ada"
 licenses = "Apache-2.0"
 tags = ["chat", "irc", "weechat"]
